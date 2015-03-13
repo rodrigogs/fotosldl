@@ -7,12 +7,15 @@ package com.sedentary.ldl.main;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -30,6 +33,7 @@ public class Main extends javax.swing.JFrame {
      */
     public Main() {
         initComponents();
+        fc.setCurrentDirectory(new File("."));
     }
 
     /**
@@ -137,19 +141,19 @@ public class Main extends javax.swing.JFrame {
                     .addComponent(lblOriginFile)
                     .addComponent(txtOriginFile, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(btnOpenOriginFile, javax.swing.GroupLayout.PREFERRED_SIZE, 25, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                .addGap(11, 11, 11)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                     .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                         .addComponent(lblPicturesFolder)
                         .addComponent(txtPicturesFolder, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                     .addComponent(btnOpenPicturesFolder, javax.swing.GroupLayout.PREFERRED_SIZE, 25, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                .addGap(11, 11, 11)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                     .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                         .addComponent(lblOutputFolder)
                         .addComponent(txtOutputFolder, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                     .addComponent(btnOpenOutputFolder, javax.swing.GroupLayout.PREFERRED_SIZE, 25, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(lblOutputFileName)
                     .addComponent(txtOutputFileName, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
@@ -164,9 +168,8 @@ public class Main extends javax.swing.JFrame {
     }// </editor-fold>//GEN-END:initComponents
 
     private void btnOpenOriginFileActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnOpenOriginFileActionPerformed
-        FileNameExtensionFilter filter = new FileNameExtensionFilter("XLS", "xls");
+        FileNameExtensionFilter filter = new FileNameExtensionFilter("TXT", "txt");
         fc.setFileFilter(filter);
-        fc.setCurrentDirectory(new File("."));
         fc.setDialogTitle("Selecione o arquivo com as referências");
         fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
         
@@ -179,9 +182,9 @@ public class Main extends javax.swing.JFrame {
     }//GEN-LAST:event_btnOpenOriginFileActionPerformed
 
     private void btnOpenPicturesFolderActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnOpenPicturesFolderActionPerformed
-        fc.setCurrentDirectory(new File("."));
         fc.setDialogTitle("Selecione a pasta onde se encontram as fotos");
         fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        fc.setFileFilter(null);
         
         int returnVal = fc.showOpenDialog(this);
         
@@ -192,9 +195,9 @@ public class Main extends javax.swing.JFrame {
     }//GEN-LAST:event_btnOpenPicturesFolderActionPerformed
 
     private void btnOpenOutputFolderActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnOpenOutputFolderActionPerformed
-        fc.setCurrentDirectory(new File("."));
         fc.setDialogTitle("Selecione a pasta onde o arquivo será gravado");
         fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        fc.setFileFilter(null);
         
         int returnVal = fc.showOpenDialog(this);
         
@@ -243,8 +246,71 @@ public class Main extends javax.swing.JFrame {
             return;
         }
         
-        // TODO encontrar arquivos e zipar
+        ArrayList<File> pictures = new ArrayList<>();
+        for (String ref : refs) {
+            File f = new File(picturesFolder, ref + ".jpg");
+            if (f.exists()) {
+                boolean notInTheList = true;
+                for (File fi : pictures) {
+                    if (fi.equals(f)) {
+                        notInTheList = false;
+                        break;
+                    }
+                }
+                if (notInTheList) {
+                    pictures.add(f);
+                }
+            }
+        }
+        
+        try {
+            zipPictures(outputFile, pictures);
+        } catch (FileNotFoundException ex) {
+            JOptionPane.showMessageDialog(null, "Arquivo não encontrado");
+            return;
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(null, "Erro ao fechar zip: " + ex.getMessage());
+            return;
+        }
+        
+        JOptionPane.showMessageDialog(null, "Conluído!");
+        pbZipProgress.setValue(0);
     }//GEN-LAST:event_btnStartActionPerformed
+    
+    private void zipPictures(File outputFile, ArrayList<File> pictures) throws FileNotFoundException, IOException {
+        FileOutputStream fos = new FileOutputStream(outputFile);
+        ZipOutputStream zos = new ZipOutputStream(fos);
+        
+        pbZipProgress.setMaximum(pictures.size());
+        for (File pic : pictures) {
+            try {
+                addToZipFile(pic, zos);
+            } catch (IOException ex) {
+                JOptionPane.showMessageDialog(null, "Erro ao processar aquivo: " + ex.getMessage());
+            }
+            pbZipProgress.setValue(pbZipProgress.getValue() + 1);
+        }
+        
+        zos.close();
+        fos.close();
+    }
+    
+    public static void addToZipFile(File picture, ZipOutputStream zos) throws FileNotFoundException, IOException {
+        System.out.println("Writing '" + picture.getName() + "' to zip file");
+
+        FileInputStream fis = new FileInputStream(picture);
+        ZipEntry zipEntry = new ZipEntry(picture.getName());
+        zos.putNextEntry(zipEntry);
+        
+        byte[] bytes = new byte[1024];
+        int length;
+        while ((length = fis.read(bytes)) >= 0) {
+            zos.write(bytes, 0, length);
+        }
+        
+        zos.closeEntry();
+        fis.close();
+    }
     
     private String[] findReferences(File originFile) {
         BufferedReader br = null;
