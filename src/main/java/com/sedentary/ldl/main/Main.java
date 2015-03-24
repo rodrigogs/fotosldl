@@ -79,6 +79,8 @@ public class Main extends javax.swing.JFrame {
         txtOutputFileName = new javax.swing.JTextField();
         btnStart = new javax.swing.JButton();
         pbZipProgress = new javax.swing.JProgressBar();
+        jspLog = new javax.swing.JScrollPane();
+        txtLog = new javax.swing.JTextArea();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setTitle("Zipper - " + this.getClass().getPackage().getImplementationVersion());
@@ -122,6 +124,11 @@ public class Main extends javax.swing.JFrame {
             }
         });
 
+        txtLog.setEditable(false);
+        txtLog.setColumns(20);
+        txtLog.setRows(5);
+        jspLog.setViewportView(txtLog);
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
@@ -151,7 +158,8 @@ public class Main extends javax.swing.JFrame {
                                 .addComponent(txtOutputFolder)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                 .addComponent(btnOpenOutputFolder, javax.swing.GroupLayout.PREFERRED_SIZE, 28, javax.swing.GroupLayout.PREFERRED_SIZE))))
-                    .addComponent(pbZipProgress, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                    .addComponent(pbZipProgress, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(jspLog))
                 .addContainerGap())
         );
         layout.setVerticalGroup(
@@ -183,7 +191,9 @@ public class Main extends javax.swing.JFrame {
                 .addComponent(btnStart)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(pbZipProgress, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jspLog, javax.swing.GroupLayout.DEFAULT_SIZE, 119, Short.MAX_VALUE)
+                .addContainerGap())
         );
 
         pack();
@@ -286,61 +296,107 @@ public class Main extends javax.swing.JFrame {
             return;
         }
         
+//        if (true) {
+//            try (PrintWriter writer = new PrintWriter(new File(picturesFolder, outputFile.getName()), "UTF-8")) {
+//                StringBuilder sb = new StringBuilder();
+//                for (final File fileEntry : picturesFolder.listFiles()) {
+//                    sb.append(fileEntry.getName()).append(",");
+//                }
+//                writer.println(sb.toString().replaceAll(".jpg", ""));
+//                writer.close();
+//            } catch (FileNotFoundException | UnsupportedEncodingException ex) {
+//                Logger.getLogger(Main.class.getName()).log(Level.SEVERE, null, ex);
+//            }
+//            
+//            return;
+//        }
+        
+        clearLog();
+        
         Collection<File> pictures = new HashSet<>();
         for (String ref : refs) {
             File f = new File(picturesFolder, ref + ".jpg");
             if (f.exists()) {
                 pictures.add(f);
+            } else {
+                log("Arquivo não encontrado para a referência " + ref);
             }
         }
         
-        try {
-            zipPictures(outputFile, pictures);
-        } catch (FileNotFoundException ex) {
-            JOptionPane.showMessageDialog(null, "Arquivo não encontrado");
-            return;
-        } catch (IOException ex) {
-            JOptionPane.showMessageDialog(null, "Erro ao fechar zip: " + ex.getMessage());
-            return;
-        }
-        
-        JOptionPane.showMessageDialog(null, "Conluído!");
-        pbZipProgress.setValue(0);
+        zipPictures(outputFile, pictures);
     }//GEN-LAST:event_btnStartActionPerformed
-        
-    private void zipPictures(File outputFile, Collection<File> pictures) throws FileNotFoundException, IOException {
-        FileOutputStream fos = new FileOutputStream(outputFile);
-        ZipOutputStream zos = new ZipOutputStream(fos);
-        
-        pbZipProgress.setMaximum(pictures.size());
-        for (File pic : pictures) {
-            try {
-                addToZipFile(pic, zos);
-            } catch (IOException ex) {
-                JOptionPane.showMessageDialog(null, "Erro ao processar aquivo: " + ex.getMessage());
-            }
-            pbZipProgress.setValue(pbZipProgress.getValue() + 1);
-        }
-        
-        zos.close();
-        fos.close();
+
+    private void zipPictures(File outputFile, Collection<File> pictures) {
+        Thread zippingThread = new Thread(new ZipThread(outputFile, pictures));
+        zippingThread.start();
     }
     
-    public static void addToZipFile(File picture, ZipOutputStream zos) throws FileNotFoundException, IOException {
-        System.out.println("Writing '" + picture.getName() + "' to zip file");
-
-        FileInputStream fis = new FileInputStream(picture);
-        ZipEntry zipEntry = new ZipEntry(picture.getName());
-        zos.putNextEntry(zipEntry);
+    private class ZipThread implements Runnable {
+        private final File outputFile;
+        private final Collection<File> pictures;
+        private volatile boolean stopThread = false;
         
-        byte[] bytes = new byte[1024];
-        int length;
-        while ((length = fis.read(bytes)) >= 0) {
-            zos.write(bytes, 0, length);
+        public ZipThread(File outputFile, Collection<File> pictures) {
+            this.outputFile = outputFile;
+            this.pictures = pictures;
         }
         
-        zos.closeEntry();
-        fis.close();
+        @Override
+        public void run() {
+            FileOutputStream fos = null;
+            ZipOutputStream zos = null;
+            try {
+                fos = new FileOutputStream(outputFile);
+                zos = new ZipOutputStream(fos);
+                pbZipProgress.setMaximum(pictures.size());
+                for (File pic : pictures) {
+                    if (stopThread) {
+                        log("Processo interrompido");
+                        pbZipProgress.setValue(0);
+                        break;
+                    }
+                    
+                    try {
+                        log("Gravando arquivo " + pic.getName());
+                        addToZipFile(pic, zos);
+                    } catch (IOException ex) {
+                        JOptionPane.showMessageDialog(null, "Erro ao processar aquivo: " + ex.getMessage());
+                    }
+                    pbZipProgress.setValue(pbZipProgress.getValue() + 1);
+                }
+            } catch (FileNotFoundException ex) {
+                JOptionPane.showMessageDialog(null, "Arquivo não encontrado");
+            } finally {
+                try {
+                    if (zos != null) zos.close();
+                    if (fos != null) fos.close();
+                } catch (IOException ex) {
+                    JOptionPane.showMessageDialog(null, "Erro ao fechar zip: " + ex.getMessage());
+                }
+                
+                JOptionPane.showMessageDialog(null, "Conluído!");
+                pbZipProgress.setValue(0);
+            }
+        }
+        
+        private void addToZipFile(File picture, ZipOutputStream zos) throws FileNotFoundException, IOException {
+            FileInputStream fis = new FileInputStream(picture);
+            ZipEntry zipEntry = new ZipEntry(picture.getName());
+            zos.putNextEntry(zipEntry);
+        
+            byte[] bytes = new byte[1024];
+            int length;
+            while ((length = fis.read(bytes)) >= 0) {
+                zos.write(bytes, 0, length);
+            }
+        
+            zos.closeEntry();
+            fis.close();
+        }
+        
+        public void stopThread() {
+            this.stopThread = true;
+        }
     }
     
     private String[] findReferences(File originFile) {
@@ -372,6 +428,16 @@ public class Main extends javax.swing.JFrame {
         }
         
         return refs.toArray(new String[refs.size()]);
+    }
+    
+    private void log(String message) {
+        txtLog.append(message);
+        txtLog.append(System.getProperty("line.separator"));
+        txtLog.setCaretPosition(txtLog.getDocument().getLength());
+    }
+    
+    private void clearLog() {
+        txtLog.setText("");
     }
     
     /**
@@ -414,11 +480,13 @@ public class Main extends javax.swing.JFrame {
     private javax.swing.JButton btnOpenOutputFolder;
     private javax.swing.JButton btnOpenPicturesFolder;
     private javax.swing.JButton btnStart;
+    private javax.swing.JScrollPane jspLog;
     private javax.swing.JLabel lblOriginFile;
     private javax.swing.JLabel lblOutputFileName;
     private javax.swing.JLabel lblOutputFolder;
     private javax.swing.JLabel lblPicturesFolder;
     private javax.swing.JProgressBar pbZipProgress;
+    private javax.swing.JTextArea txtLog;
     private javax.swing.JTextField txtOriginFile;
     private javax.swing.JTextField txtOutputFileName;
     private javax.swing.JTextField txtOutputFolder;
