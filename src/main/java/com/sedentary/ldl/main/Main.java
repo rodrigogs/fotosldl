@@ -31,6 +31,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 public class Main extends javax.swing.JFrame {
 
     private final JFileChooser fc = new JFileChooser();
+    private ZipThread zipThread = null;
     
     /**
      * Creates new form Main
@@ -258,6 +259,11 @@ public class Main extends javax.swing.JFrame {
     }//GEN-LAST:event_btnOpenOutputFolderActionPerformed
 
     private void btnStartActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnStartActionPerformed
+        if (this.zipThread != null && this.zipThread.isRunning()) {
+            stopZipping();
+            return;
+        }
+        
         File originFile = new File(txtOriginFile.getText());
         File picturesFolder = new File(txtPicturesFolder.getText());
         File outputFolder = new File(txtOutputFolder.getText());
@@ -324,16 +330,25 @@ public class Main extends javax.swing.JFrame {
         }
         
         zipPictures(outputFile, pictures);
+        btnStart.setText("Cancelar");
     }//GEN-LAST:event_btnStartActionPerformed
 
     private void zipPictures(File outputFile, Collection<File> pictures) {
-        Thread zippingThread = new Thread(new ZipThread(outputFile, pictures));
-        zippingThread.start();
+        this.zipThread = new ZipThread(outputFile, pictures);
+        Thread thread = new Thread(this.zipThread);
+        thread.start();
+    }
+    
+    private void stopZipping() {
+        if (this.zipThread != null && this.zipThread.isRunning()) {
+            this.zipThread.stop();
+        }
     }
     
     private class ZipThread implements Runnable {
         private final File outputFile;
         private final Collection<File> pictures;
+        private volatile boolean isRunning = false;
         private volatile boolean stopThread = false;
         
         public ZipThread(File outputFile, Collection<File> pictures) {
@@ -343,6 +358,7 @@ public class Main extends javax.swing.JFrame {
         
         @Override
         public void run() {
+            this.isRunning = true;
             FileOutputStream fos = null;
             ZipOutputStream zos = null;
             try {
@@ -376,6 +392,8 @@ public class Main extends javax.swing.JFrame {
                 
                 JOptionPane.showMessageDialog(null, "Conluído!");
                 pbZipProgress.setValue(0);
+                this.isRunning = false;
+                btnStart.setText("Iniciar");
             }
         }
         
@@ -394,8 +412,12 @@ public class Main extends javax.swing.JFrame {
             fis.close();
         }
         
-        public void stopThread() {
+        public void stop() {
             this.stopThread = true;
+        }
+        
+        public boolean isRunning() {
+            return this.isRunning;
         }
     }
     
